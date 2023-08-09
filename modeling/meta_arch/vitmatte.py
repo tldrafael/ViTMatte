@@ -17,6 +17,7 @@ class ViTMatte(nn.Module):
                  size_divisibility,
                  decoder,
                  ):
+
         super(ViTMatte, self).__init__()
         self.backbone = backbone
         self.criterion = criterion
@@ -30,7 +31,9 @@ class ViTMatte(nn.Module):
         assert (
             self.pixel_mean.shape == self.pixel_std.shape
         ), f"{self.pixel_mean} and {self.pixel_std} have different shapes!"
-    
+
+        self.training = criterion is not None
+
     @property
     def device(self):
         return self.pixel_mean.device
@@ -39,20 +42,18 @@ class ViTMatte(nn.Module):
         images, targets, H, W = self.preprocess_inputs(batched_inputs)
 
         features = self.backbone(images)
-        outputs = self.decoder(features, images)  
+        outputs = self.decoder(features, images)
 
         if self.training:
             assert targets is not None
             trimap = images[:, 3:4]
             sample_map = torch.zeros_like(trimap)
             sample_map[trimap==0.5] = 1
-            losses = self.criterion(sample_map ,outputs, targets)               
+            losses = self.criterion(sample_map ,outputs, targets)
             return losses
         else:
             outputs['phas'] = outputs['phas'][:,:,:H,:W]
             return outputs
-
-
 
     def preprocess_inputs(self, batched_inputs):
         """
@@ -68,7 +69,7 @@ class ViTMatte(nn.Module):
             trimap[trimap >= 85] = 0.5
 
         images = torch.cat((images, trimap), dim=1)
-        
+
         B, C, H, W = images.shape
         if images.shape[-1]%32!=0 or images.shape[-2]%32!=0:
             new_H = (32-images.shape[-2]%32) + H

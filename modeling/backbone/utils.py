@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Tuple
 
 __all__ = [
     "window_partition",
@@ -13,7 +14,7 @@ __all__ = [
 ]
 
 
-def window_partition(x, window_size):
+def window_partition(x, window_size: int) -> Tuple[torch.Tensor, Tuple[int, int]]:
     """
     Partition into non-overlapping windows with padding if needed.
     Args:
@@ -28,7 +29,8 @@ def window_partition(x, window_size):
 
     pad_h = (window_size - H % window_size) % window_size
     pad_w = (window_size - W % window_size) % window_size
-    if pad_h > 0 or pad_w > 0:
+    # print(pad_h, pad_h.__class__)
+    if  pad_h > 0 or pad_w > 0:
         x = F.pad(x, (0, 0, 0, pad_w, 0, pad_h))
     Hp, Wp = H + pad_h, W + pad_w
 
@@ -37,7 +39,7 @@ def window_partition(x, window_size):
     return windows, (Hp, Wp)
 
 
-def window_unpartition(windows, window_size, pad_hw, hw):
+def window_unpartition(windows, window_size: int, pad_hw: Tuple[int, int], hw: Tuple[int, int]) -> torch.Tensor:
     """
     Window unpartition into original sequences and removing padding.
     Args:
@@ -49,8 +51,12 @@ def window_unpartition(windows, window_size, pad_hw, hw):
     Returns:
         x: unpartitioned sequences with [B, H, W, C].
     """
-    Hp, Wp = pad_hw
-    H, W = hw
+    #Hp, Wp = pad_hw
+    #H, W = hw
+    Hp = pad_hw[0]
+    Wp = pad_hw[1]
+    H = hw[0]
+    W = hw[1]
     B = windows.shape[0] // (Hp * Wp // window_size // window_size)
     x = windows.view(B, Hp // window_size, Wp // window_size, window_size, window_size, -1)
     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, Hp, Wp, -1)
@@ -60,7 +66,46 @@ def window_unpartition(windows, window_size, pad_hw, hw):
     return x
 
 
-def get_rel_pos(q_size, k_size, rel_pos):
+#def get_rel_pos(q_size, k_size, rel_pos):
+#    """
+#    Get relative positional embeddings according to the relative positions of
+#        query and key sizes.
+#    Args:
+#        q_size (int): size of query q.
+#        k_size (int): size of key k.
+#        rel_pos (Tensor): relative position embeddings (L, C).
+#
+#    Returns:
+#        Extracted positional embeddings according to relative positions.
+#    """
+#    # max_rel_dist = int(2 * max(q_size, k_size) - 1)
+#    q_size = torch.tensor(q_size).int()
+#    k_size = torch.tensor(k_size).int()
+#    max_rel_dist = 2 * torch.max(q_size, k_size) - 1
+#
+#    # Interpolate rel pos if needed.
+#    if rel_pos.shape[0] != max_rel_dist:
+#        # Interpolate rel pos.
+#        rel_pos_resized = F.interpolate(
+#            rel_pos.reshape(1, rel_pos.shape[0], -1).permute(0, 2, 1),
+#            size=max_rel_dist,
+#            mode="linear",
+#        )
+#        rel_pos_resized = rel_pos_resized.reshape(-1, max_rel_dist).permute(1, 0)
+#    else:
+#        rel_pos_resized = rel_pos
+#
+#    # Scale the coords with short length if shapes for q and k are different.
+#    kq_ratio = k_size / q_size
+#    qk_ratio = 1 / kq_ratio
+#    q_coords = torch.arange(q_size)[:, None] * kq_ratio.clamp(max=1.0)
+#    k_coords = torch.arange(k_size)[None, :] * qk_ratio.clamp(max=1.0)
+#    relative_coords = (q_coords - k_coords) + (k_size - 1) * qk_ratio.clamp(min=1.0)
+#
+#    return rel_pos_resized[relative_coords.long()]
+
+
+def get_rel_pos(q_size: int, k_size: int, rel_pos):
     """
     Get relative positional embeddings according to the relative positions of
         query and key sizes.
@@ -72,6 +117,12 @@ def get_rel_pos(q_size, k_size, rel_pos):
     Returns:
         Extracted positional embeddings according to relative positions.
     """
+    #print(q_size, k_size)
+    #print(q_size.__class__, k_size.__class__)
+    #try:
+    #    print(q_size.dtype, k_size.dtype)
+    #except:
+    #    pass
     max_rel_dist = int(2 * max(q_size, k_size) - 1)
     # Interpolate rel pos if needed.
     if rel_pos.shape[0] != max_rel_dist:
@@ -93,7 +144,8 @@ def get_rel_pos(q_size, k_size, rel_pos):
     return rel_pos_resized[relative_coords.long()]
 
 
-def add_decomposed_rel_pos(attn, q, rel_pos_h, rel_pos_w, q_size, k_size):
+def add_decomposed_rel_pos(attn, q, rel_pos_h, rel_pos_w, q_size: Tuple[int, int],
+                           k_size: Tuple[int, int]):
     """
     Calculate decomposed Relative Positional Embeddings from :paper:`mvitv2`.
     https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py   # noqa B950
@@ -125,7 +177,7 @@ def add_decomposed_rel_pos(attn, q, rel_pos_h, rel_pos_w, q_size, k_size):
     return attn
 
 
-def get_abs_pos(abs_pos, has_cls_token, hw):
+def get_abs_pos(abs_pos, has_cls_token: bool, hw: Tuple[int, int]):
     """
     Calculate absolute positional embeddings. If needed, resize embeddings and remove cls_token
         dimension for the original embeddings.
@@ -149,7 +201,7 @@ def get_abs_pos(abs_pos, has_cls_token, hw):
             abs_pos.reshape(1, size, size, -1).permute(0, 3, 1, 2),
             size=(h, w),
             mode="bicubic",
-            align_corners=False,
+            align_corners=False, antialias=False,
         )
 
         return new_abs_pos.permute(0, 2, 3, 1)

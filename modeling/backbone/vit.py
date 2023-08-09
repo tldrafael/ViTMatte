@@ -184,9 +184,9 @@ class Block(nn.Module):
         act_layer=nn.GELU,
         use_rel_pos=False,
         rel_pos_zero_init=True,
-        window_size=0,
+        window_size: int = 0,
         use_cc_attn = False,
-        use_residual_block=False,
+        use_residual_block : bool = False,
         use_convnext_block=False,
         input_size=None,
         res_conv_kernel_size=3,
@@ -238,9 +238,14 @@ class Block(nn.Module):
                 conv_kernels=res_conv_kernel_size,
                 conv_paddings=res_conv_padding,
             )
+        else:
+            self.residual = nn.Identity()
+
         self.use_convnext_block = use_convnext_block
         if use_convnext_block:
             self.convnext = ConvNextBlock(dim = dim)
+        else:
+            self.convnext = nn.Identity()
 
         if use_cc_attn:
             self.attn = CrissCrossAttention(dim)
@@ -250,6 +255,8 @@ class Block(nn.Module):
         shortcut = x
         x = self.norm1(x)
         # Window partition
+        pad_hw = (0, 0)
+        H, W = 0, 0
         if self.window_size > 0:
             H, W = x.shape[1], x.shape[2]
             x, pad_hw = window_partition(x, self.window_size)

@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+import torchvision.transforms as T
+
 
 class Basic_Conv3x3(nn.Module):
     """
@@ -36,24 +38,24 @@ class ConvStream(nn.Module):
     ):
         super().__init__()
         self.convs = nn.ModuleList()
-        
+
         self.conv_chans = out_chans.copy()
         self.conv_chans.insert(0, in_chans)
-        
+
         for i in range(len(self.conv_chans)-1):
             in_chan_ = self.conv_chans[i]
             out_chan_ = self.conv_chans[i+1]
             self.convs.append(
                 Basic_Conv3x3(in_chan_, out_chan_)
             )
-    
+
     def forward(self, x):
         out_dict = {'D0': x}
-        for i in range(len(self.convs)):
-            x = self.convs[i](x)
+        for i, layer in enumerate(self.convs):
+            x = layer(x)
             name_ = 'D'+str(i+1)
             out_dict[name_] = x
-        
+
         return out_dict
 
 class Fusion_Block(nn.Module):
@@ -69,11 +71,14 @@ class Fusion_Block(nn.Module):
         self.conv = Basic_Conv3x3(in_chans, out_chans, stride=1, padding=1)
 
     def forward(self, x, D):
-        F_up = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        F_up = F.interpolate(x, scale_factor=2., mode='bilinear', align_corners=False, antialias=True)
+        #newsize = tuple(2*s for s in x.shape[-2:])
+        #F_up = T.functional.resize(x, size=newsize,
+        #    interpolation=T.InterpolationMode.BILINEAR, antialias=True)
         out = torch.cat([D, F_up], dim=1)
         out = self.conv(out)
 
-        return out    
+        return out
 
 class Matting_Head(nn.Module):
     """
@@ -131,10 +136,10 @@ class Detail_Capture(nn.Module):
 
     def forward(self, features, images):
         detail_features = self.convstream(images)
-        for i in range(len(self.fusion_blks)):
+        for i, layer in enumerate(self.fusion_blks):
             d_name_ = 'D'+str(len(self.fusion_blks)-i-1)
-            features = self.fusion_blks[i](features, detail_features[d_name_])
-        
-        phas = torch.sigmoid(self.matting_head(features))
+            features = layer(features, detail_features[d_name_])
 
-        return {'phas': phas}
+        # phas = torch.sigmoid(self.matting_head(features))
+        # return {'phas': phas}
+        return self.matting_head(features)
