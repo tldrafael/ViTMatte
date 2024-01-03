@@ -67,14 +67,17 @@ class Fusion_Block(nn.Module):
         in_chans,
         out_chans,
     ):
+        self.in_chans = in_chans
+        self.out_chans = out_chans
+
         super().__init__()
         self.conv = Basic_Conv3x3(in_chans, out_chans, stride=1, padding=1)
 
     def forward(self, x, D):
-        F_up = F.interpolate(x, scale_factor=2., mode='bilinear', align_corners=False, antialias=True)
-        #newsize = tuple(2*s for s in x.shape[-2:])
-        #F_up = T.functional.resize(x, size=newsize,
-        #    interpolation=T.InterpolationMode.BILINEAR, antialias=True)
+        newsize = D.shape[-2:]
+        F_up = T.functional.resize(
+            x, size=newsize, interpolation=T.InterpolationMode.BILINEAR,
+            antialias=True)
         out = torch.cat([D, F_up], dim=1)
         out = self.conv(out)
 
@@ -109,20 +112,30 @@ class Detail_Capture(nn.Module):
     def __init__(
         self,
         in_chans = 384,
-        img_chans=4,
+        img_chans = 4,
         convstream_out = [48, 96, 192],
         fusion_out = [256, 128, 64, 32],
+        patch_size = 16,
     ):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
 
-        self.convstream = ConvStream(in_chans = img_chans)
+        if patch_size != 16:
+            convstream_out = [
+                int(c * (16 / patch_size) ** 2) for c in convstream_out]
+
+        self.patch_size = patch_size
+        self.convstream_out = convstream_out
+
+        self.convstream = ConvStream(
+            in_chans = img_chans, out_chans = convstream_out)
         self.conv_chans = self.convstream.conv_chans
 
         self.fusion_blks = nn.ModuleList()
         self.fus_channs = fusion_out.copy()
         self.fus_channs.insert(0, in_chans)
         for i in range(len(self.fus_channs)-1):
+            in_chans = self.fus_channs[i] + self.conv_chans[-(i+1)]
             self.fusion_blks.append(
                 Fusion_Block(
                     in_chans = self.fus_channs[i] + self.conv_chans[-(i+1)],
@@ -136,6 +149,9 @@ class Detail_Capture(nn.Module):
 
     def forward(self, features, images):
         detail_features = self.convstream(images)
+        # print(self.patch_size, self.convstream_out,
+        #     [v.shape for k, v in detail_features.items()])
+
         for i, layer in enumerate(self.fusion_blks):
             d_name_ = 'D'+str(len(self.fusion_blks)-i-1)
             features = layer(features, detail_features[d_name_])
