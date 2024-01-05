@@ -120,10 +120,6 @@ class Detail_Capture(nn.Module):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
 
-        if patch_size != 16:
-            convstream_out = [
-                int(c * (16 / patch_size) ** 2) for c in convstream_out]
-
         self.patch_size = patch_size
         self.convstream_out = convstream_out
 
@@ -143,7 +139,7 @@ class Detail_Capture(nn.Module):
                 )
             )
 
-        self.matting_head = Matting_Head(
+        self.matting_head =  Matting_Head(
             in_chans = fusion_out[-1],
         )
 
