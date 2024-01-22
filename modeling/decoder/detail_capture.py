@@ -4,6 +4,33 @@ from torch.nn import functional as F
 import torchvision.transforms as T
 
 
+class Boosted_Conv3x3(nn.Module):
+    """
+    Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
+    """
+    def __init__(
+        self,
+        in_chans,
+        out_chans,
+        stride=2,
+        padding=1,
+    ):
+        super().__init__()
+        nlayers = 12
+        ch_list = [in_chans] + [out_chans // 2] * (nlayers - 1) + [out_chans]
+        strides = [2] + [1] * (nlayers - 1)
+        paddings = [1] + ['same'] * (nlayers - 1)
+
+        self.basics = nn.Sequential(*[
+            Basic_Conv3x3(ch_list[i], ch_list[i+1], strides[i], paddings[i])
+            for i in range(nlayers)
+        ])
+
+    def forward(self, x):
+        x = self.basics(x)
+        return x
+
+
 class Basic_Conv3x3(nn.Module):
     """
     Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
@@ -35,6 +62,7 @@ class ConvStream(nn.Module):
         self,
         in_chans = 4,
         out_chans = [48, 96, 192],
+        block='basic',
     ):
         super().__init__()
         self.convs = nn.ModuleList()
@@ -42,11 +70,13 @@ class ConvStream(nn.Module):
         self.conv_chans = out_chans.copy()
         self.conv_chans.insert(0, in_chans)
 
+        block = Basic_Conv3x3 if block == 'basic' else Boosted_Conv3x3
+
         for i in range(len(self.conv_chans)-1):
             in_chan_ = self.conv_chans[i]
             out_chan_ = self.conv_chans[i+1]
             self.convs.append(
-                Basic_Conv3x3(in_chan_, out_chan_)
+                block(in_chan_, out_chan_)
             )
 
     def forward(self, x):
@@ -116,6 +146,7 @@ class Detail_Capture(nn.Module):
         convstream_out = [48, 96, 192],
         fusion_out = [256, 128, 64, 32],
         patch_size = 16,
+        block='basic',
     ):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
@@ -124,7 +155,7 @@ class Detail_Capture(nn.Module):
         self.convstream_out = convstream_out
 
         self.convstream = ConvStream(
-            in_chans = img_chans, out_chans = convstream_out)
+            in_chans = img_chans, out_chans = convstream_out, block=block)
         self.conv_chans = self.convstream.conv_chans
 
         self.fusion_blks = nn.ModuleList()
