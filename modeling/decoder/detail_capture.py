@@ -107,7 +107,7 @@ class Fusion_Block(nn.Module):
         newsize = D.shape[-2:]
         F_up = T.functional.resize(
             x, size=newsize, interpolation=T.InterpolationMode.BILINEAR,
-            antialias=True)
+            antialias=False)
         out = torch.cat([D, F_up], dim=1)
         out = self.conv(out)
 
